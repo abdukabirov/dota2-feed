@@ -42,6 +42,9 @@ class Tier1LeagueTests(unittest.TestCase):
         from src.bot.discovery import get_active_tier1_league_ids
 
         with patch(
+            "src.bot.discovery.get_leagues",
+            return_value=[],
+        ), patch(
             "src.bot.discovery.get_recent_pro_matches",
             return_value=[
                 {"match_id": 1, "leagueid": 777001, "league_name": "EWC 2026"},
@@ -54,6 +57,42 @@ class Tier1LeagueTests(unittest.TestCase):
         self.assertIn(777001, league_ids)
         self.assertIn(777002, league_ids)
         self.assertNotIn(777003, league_ids)
+
+    def test_dynamic_tier1_league_ids_exclude_missing_ids(self) -> None:
+        from src.bot.discovery import get_active_tier1_league_ids
+
+        with patch(
+            "src.bot.discovery.get_leagues",
+            return_value=[],
+        ), patch(
+            "src.bot.discovery.get_recent_pro_matches",
+            return_value=[{"match_id": 1, "leagueid": 0, "league_name": "EWC 2026"}],
+        ):
+            league_ids = get_active_tier1_league_ids()
+
+        self.assertNotIn(0, league_ids)
+
+    def test_dynamic_tier1_league_ids_use_opendota_tier_catalog(self) -> None:
+        from src.bot.discovery import get_active_tier1_league_ids
+
+        with patch(
+            "src.bot.discovery.get_leagues",
+            return_value=[
+                {"leagueid": 20208, "tier": "professional", "name": "BLAST SLAM IX"},
+                {"leagueid": 20209, "tier": "professional", "name": "BLAST SLAM IX Qualifier"},
+                {"leagueid": 20210, "tier": "excluded", "name": "BLAST SLAM IX"},
+                {"leagueid": 20211, "tier": "amateur", "name": "Regional Cup"},
+            ],
+        ), patch(
+            "src.bot.discovery.get_recent_pro_matches",
+            return_value=[],
+        ):
+            league_ids = get_active_tier1_league_ids()
+
+        self.assertIn(20208, league_ids)
+        self.assertNotIn(20209, league_ids)
+        self.assertNotIn(20210, league_ids)
+        self.assertNotIn(20211, league_ids)
 
     def test_qualifiers_and_divisions_are_rejected_by_name(self) -> None:
         self.assertFalse(is_allowed_tier1_league(19448, "DreamLeague Season 29: Closed Qualifier"))

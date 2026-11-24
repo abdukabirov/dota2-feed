@@ -11,7 +11,7 @@ from config import (
     is_allowed_tier1_league,
     resolve_tier1_league_name,
 )
-from opendota_discovery import get_live_league_matches, get_match_snapshot, get_recent_pro_matches
+from opendota_discovery import get_leagues, get_live_league_matches, get_match_snapshot, get_recent_pro_matches
 from src.bot.readiness import snapshot_has_final_result
 from src.bot.runtime_state import state
 from storage import (
@@ -28,9 +28,20 @@ RECENT_FINISHED_SAFETY_LOOKBACK_SECONDS = 4 * 60 * 60
 
 def get_active_tier1_league_ids() -> set[int]:
     league_ids = set(TIER1_LEAGUES)
+    for league in get_leagues():
+        if not isinstance(league, dict):
+            continue
+        tier = str(league.get("tier") or "").strip().lower()
+        league_id = int(league.get("leagueid") or 0)
+        league_name = str(league.get("name") or "")
+        if league_id and tier in {"professional", "premium"}:
+            if is_allowed_tier1_league(league_id, league_name):
+                league_ids.add(league_id)
     for match in get_recent_pro_matches(league_ids, take=RECENT_MATCHES_FETCH_LIMIT):
         if is_allowed_tier1_league(match.get("leagueid"), match.get("league_name") or ""):
-            league_ids.add(int(match.get("leagueid") or 0))
+            league_id = int(match.get("leagueid") or 0)
+            if league_id:
+                league_ids.add(league_id)
     return league_ids
 
 

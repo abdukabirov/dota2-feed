@@ -720,9 +720,10 @@ def _build_preview_details(match_summary: dict) -> dict:
     return _apply_logo_fallback(details, match_summary)
 
 
-def _build_result_details_from_snapshot(match_summary: dict) -> dict | None:
+def _build_result_details_from_snapshot(match_summary: dict, snapshot: dict | None = None) -> dict | None:
     match_id = int(match_summary["match_id"])
-    snapshot = get_match_snapshot(match_id)
+    if snapshot is None:
+        snapshot = get_match_snapshot(match_id)
     if not snapshot or not (snapshot.get("players") or []):
         return None
 
@@ -809,9 +810,10 @@ def _build_result_details_from_snapshot(match_summary: dict) -> dict | None:
     return _apply_logo_fallback(details, match_summary)
 
 
-def _build_historical_preview_details(match_summary: dict) -> dict | None:
+def _build_historical_preview_details(match_summary: dict, snapshot: dict | None = None) -> dict | None:
     match_id = int(match_summary["match_id"])
-    snapshot = get_match_snapshot(match_id)
+    if snapshot is None:
+        snapshot = get_match_snapshot(match_id)
     if not snapshot or not (snapshot.get("players") or []):
         return None
 
@@ -881,10 +883,11 @@ def _build_historical_preview_details(match_summary: dict) -> dict | None:
     return _apply_logo_fallback(details, match_summary)
 
 
-async def post_match(match_summary: dict) -> None:
+async def post_match(match_summary: dict, snapshot: dict | None = None) -> None:
     match_id = int(match_summary["match_id"])
-    snapshot = get_match_snapshot(match_id)
-    details = _build_result_details_from_snapshot(match_summary)
+    if snapshot is None:
+        snapshot = get_match_snapshot(match_id)
+    details = _build_result_details_from_snapshot(match_summary, snapshot)
 
     if not details:
         logger.warning("Could not build OpenDota snapshot result for match %s, trying STRATZ details.", match_id)
@@ -1031,7 +1034,10 @@ def _result_status_line(match_id: int) -> str:
         return f"not ready, OpenDota {status}"
     if not snapshot_has_final_result(snapshot):
         return "not ready, match not final"
-    details = _build_result_details_from_snapshot({"match_id": match_id, "leagueid": snapshot.get("leagueid") or 0})
+    details = _build_result_details_from_snapshot(
+        {"match_id": match_id, "leagueid": snapshot.get("leagueid") or 0},
+        snapshot,
+    )
     if details:
         missing_neutral, missing_neutral_icon, missing_buff_icon = result_asset_gaps(details)
         if missing_neutral or missing_neutral_icon:
@@ -1210,7 +1216,8 @@ async def backfill_tier1_history(count: int = 12, per_league: int = 3) -> None:
     league_buckets: list[list[dict]] = []
 
     recent_matches = get_recent_configured_matches()
-    for league_id, league_name in TIER1_LEAGUES.items():
+    league_ids = list(dict.fromkeys(int(match["leagueid"]) for match in recent_matches))
+    for league_id in league_ids:
         league_candidates = [match for match in recent_matches if match["leagueid"] == int(league_id) and match["match_id"] not in sent_matches]
         if league_candidates:
             league_buckets.append(league_candidates[:per_league])
@@ -1253,7 +1260,8 @@ async def backfill_current_league(league_id: int, count: int = 3) -> None:
 
 
 async def post_historical_preview_and_result(match_summary: dict) -> None:
-    preview_details = _build_historical_preview_details(match_summary)
+    snapshot = get_match_snapshot(int(match_summary["match_id"]))
+    preview_details = _build_historical_preview_details(match_summary, snapshot)
     if preview_details and has_complete_draft(preview_details) and has_enough_bans(preview_details):
         try:
             await send_historical_preview_post(
@@ -1267,7 +1275,7 @@ async def post_historical_preview_and_result(match_summary: dict) -> None:
         except Exception as exc:
             logger.error("Failed to post historical preview %s: %s", match_summary["match_id"], exc)
 
-    await post_match(match_summary)
+    await post_match(match_summary, snapshot=snapshot or None)
 
 
 def _sort_backfill_story_matches(matches: list[dict]) -> list[dict]:

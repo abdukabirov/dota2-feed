@@ -21,6 +21,13 @@ def has_stratz_token():
     return bool(STRATZ_TOKEN)
 
 
+def _redact_stratz_token(text: object) -> str:
+    value = str(text)
+    if STRATZ_TOKEN:
+        value = value.replace(STRATZ_TOKEN, "[redacted]")
+    return value
+
+
 def _wait_for_stratz_slot() -> bool:
     global _last_call_at
     now = time.monotonic()
@@ -79,13 +86,13 @@ def stratz_graphql(query, variables=None):
         return None
 
     if response.status_code != 200:
-        logger.warning("STRATZ returned HTTP %s: %s", response.status_code, response.text[:300])
+        logger.warning("STRATZ returned HTTP %s: %s", response.status_code, _redact_stratz_token(response.text[:300]))
         return None
 
     try:
         data = response.json()
     except ValueError:
-        logger.warning("STRATZ returned non-JSON response: %s", response.text[:300])
+        logger.warning("STRATZ returned non-JSON response: %s", _redact_stratz_token(response.text[:300]))
         return None
 
     if data.get("errors"):
@@ -238,9 +245,9 @@ def _player_buff_items(player, item_map):
 
 def get_live_matches():
     query = """
-    query($leagueIds: [Int]) {
+    {
       live {
-        matches(request: { leagueIds: $leagueIds, isCompleted: false, isLeague: true, take: 50 }) {
+        matches(request: { isCompleted: false, isLeague: true, take: 50 }) {
           matchId
           gameTime
           gameMinute
@@ -254,7 +261,7 @@ def get_live_matches():
       }
     }
     """
-    data = stratz_graphql(query, {"leagueIds": list(TIER1_LEAGUES)})
+    data = stratz_graphql(query)
     matches = (((data or {}).get("live") or {}).get("matches")) or []
     normalized = []
 

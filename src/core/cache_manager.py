@@ -26,10 +26,12 @@ class CacheManager:
 
     def _save(self) -> None:
         try:
-            self.cache_file.write_text(
+            tmp_file = self.cache_file.with_suffix(self.cache_file.suffix + ".tmp")
+            tmp_file.write_text(
                 json.dumps(self._data, ensure_ascii=False, indent=2),
                 encoding="utf-8",
             )
+            tmp_file.replace(self.cache_file)
         except OSError:
             return
 
@@ -44,14 +46,16 @@ class CacheManager:
 
     def get(self, key: str) -> Any | None:
         payload = self._data.get(key)
-        if not payload:
+        if not isinstance(payload, dict):
             return None
         stamp = payload.get("timestamp")
-        if not stamp:
+        if not isinstance(stamp, str) or not stamp:
             return None
         try:
             ts = datetime.fromisoformat(stamp)
         except ValueError:
+            return None
+        if ts.tzinfo is None:
             return None
         if datetime.now(timezone.utc) - ts > self.ttl:
             self._data.pop(key, None)

@@ -16,10 +16,12 @@ OPENDOTA_MATCH = "https://api.opendota.com/api/matches/{match_id}"
 OPENDOTA_TEAM = "https://api.opendota.com/api/teams/{team_id}"
 OPENDOTA_PLAYER = "https://api.opendota.com/api/players/{account_id}"
 OPENDOTA_LEAGUE_MATCHES = "https://api.opendota.com/api/leagues/{league_id}/matches"
+OPENDOTA_LEAGUES = "https://api.opendota.com/api/leagues"
 
 OPENDOTA_429_COOLDOWN_SECONDS = int(os.getenv("OPENDOTA_429_COOLDOWN_SECONDS", "300"))
 OPENDOTA_PRO_MATCHES_TTL_SECONDS = int(os.getenv("OPENDOTA_PRO_MATCHES_TTL_SECONDS", "900"))
 OPENDOTA_LEAGUE_MATCHES_TTL_SECONDS = int(os.getenv("OPENDOTA_LEAGUE_MATCHES_TTL_SECONDS", "1800"))
+OPENDOTA_LEAGUES_TTL_SECONDS = int(os.getenv("OPENDOTA_LEAGUES_TTL_SECONDS", "86400"))
 OPENDOTA_TEAM_TTL_SECONDS = int(os.getenv("OPENDOTA_TEAM_TTL_SECONDS", "86400"))
 OPENDOTA_PLAYER_TTL_SECONDS = int(os.getenv("OPENDOTA_PLAYER_TTL_SECONDS", "86400"))
 OPENDOTA_MATCH_404_RETRY_SECONDS = int(os.getenv("OPENDOTA_MATCH_404_RETRY_SECONDS", "300"))
@@ -35,6 +37,7 @@ _persistent_lookup_cache: dict[str, dict[str, dict]] = {
     "players": {},
     "pro_matches": {},
     "league_matches": {},
+    "leagues": {},
 }
 _match_retry_after: dict[int, int] = {}
 
@@ -63,11 +66,13 @@ def _load_persistent_lookup_cache() -> None:
     players = data.get("players") if isinstance(data.get("players"), dict) else {}
     pro_matches = data.get("pro_matches") if isinstance(data.get("pro_matches"), dict) else {}
     league_matches = data.get("league_matches") if isinstance(data.get("league_matches"), dict) else {}
+    leagues = data.get("leagues") if isinstance(data.get("leagues"), dict) else {}
     _persistent_lookup_cache = {
         "teams": teams,
         "players": players,
         "pro_matches": pro_matches,
         "league_matches": league_matches,
+        "leagues": leagues,
     }
 
 
@@ -219,6 +224,15 @@ def _get_json(url: str):
         }
         logger.warning("OpenDota returned invalid JSON for %s", url)
         return None
+
+
+def get_leagues() -> list[dict]:
+    rows = _cached_payload("leagues", "latest", OPENDOTA_LEAGUES_TTL_SECONDS)
+    if not isinstance(rows, list):
+        rows = _get_json(OPENDOTA_LEAGUES) or []
+        if rows:
+            _remember_payload("leagues", "latest", rows, max_items=1)
+    return rows if isinstance(rows, list) else []
 
 
 def get_recent_pro_matches(league_ids: set[int] | list[int], take: int = 50) -> list[dict]:

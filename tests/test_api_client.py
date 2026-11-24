@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import unittest
+from datetime import datetime
 from pathlib import Path
+from tempfile import TemporaryDirectory
 
 from src.core.api_client import APIClient
 
@@ -58,3 +60,13 @@ class APIClientTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(result, {"ok": True})
         self.assertEqual(seen_headers, {"Authorization": "Bearer token"})
+
+
+class CacheManagerTests(unittest.TestCase):
+    def test_naive_timestamp_is_treated_as_a_cache_miss(self) -> None:
+        with TemporaryDirectory() as tmp_dir:
+            client = APIClient(cache_dir=Path(tmp_dir))
+            key = "bad-timestamp"
+            client.cache._data[key] = {"timestamp": datetime.now().isoformat(), "data": {"ok": True}}
+
+            self.assertIsNone(client.cache.get(key))

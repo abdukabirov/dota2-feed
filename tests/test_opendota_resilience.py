@@ -7,7 +7,7 @@ from unittest.mock import patch
 from urllib.parse import parse_qs, urlsplit
 
 import opendota_discovery
-from src.bot.main import _sort_backfill_story_matches
+from src.bot.main import _build_result_details_from_snapshot, _sort_backfill_story_matches
 
 
 class FakeResponse:
@@ -28,14 +28,26 @@ class OpenDotaResilienceTests(unittest.TestCase):
         opendota_discovery._opendota_blocked_until = 0
         opendota_discovery._opendota_last_status.clear()
         opendota_discovery._persistent_lookup_cache_loaded = False
-        opendota_discovery._persistent_lookup_cache = {"teams": {}, "players": {}, "pro_matches": {}, "league_matches": {}}
+        opendota_discovery._persistent_lookup_cache = {
+            "teams": {},
+            "players": {},
+            "pro_matches": {},
+            "league_matches": {},
+            "leagues": {},
+        }
         opendota_discovery._match_retry_after.clear()
         opendota_discovery.clear_opendota_memory_cache()
 
     def tearDown(self) -> None:
         opendota_discovery.STATE_FILE = self._original_state_file
         opendota_discovery._persistent_lookup_cache_loaded = False
-        opendota_discovery._persistent_lookup_cache = {"teams": {}, "players": {}, "pro_matches": {}, "league_matches": {}}
+        opendota_discovery._persistent_lookup_cache = {
+            "teams": {},
+            "players": {},
+            "pro_matches": {},
+            "league_matches": {},
+            "leagues": {},
+        }
         opendota_discovery._match_retry_after.clear()
         opendota_discovery.clear_opendota_memory_cache()
 
@@ -188,6 +200,24 @@ class OpenDotaResilienceTests(unittest.TestCase):
                 self.assertEqual(opendota_discovery.get_match_snapshot(999), {})
                 self.assertEqual(mocked_get.call_count, 1)
 
+    def test_league_catalog_uses_ttl_cache(self) -> None:
+        with TemporaryDirectory() as tmp_dir:
+            opendota_discovery.STATE_FILE = str(Path(tmp_dir) / "bot_state.json")
+            payload = [
+                {"leagueid": 20208, "tier": "professional", "name": "BLAST SLAM IX"},
+            ]
+
+            def fake_get(url: str, timeout: int):
+                return FakeResponse(200, payload)
+
+            with patch("opendota_discovery.shared_http.get", side_effect=fake_get) as mocked_get:
+                first = opendota_discovery.get_leagues()
+                second = opendota_discovery.get_leagues()
+
+                self.assertEqual(first, payload)
+                self.assertEqual(second, payload)
+                self.assertEqual(mocked_get.call_count, 1)
+
     def test_pro_matches_uses_ttl_cache(self) -> None:
         with TemporaryDirectory() as tmp_dir:
             opendota_discovery.STATE_FILE = str(Path(tmp_dir) / "bot_state.json")
@@ -223,6 +253,26 @@ class OpenDotaResilienceTests(unittest.TestCase):
         ordered = _sort_backfill_story_matches(rows)
 
         self.assertEqual([row["match_id"] for row in ordered], [10, 11, 20, 21, 30])
+
+    def test_result_details_reuses_the_snapshot_supplied_by_the_caller(self) -> None:
+        snapshot = {
+            "players": [{"hero_id": 1, "isRadiant": True, "account_id": 0}],
+            "leagueid": 19696,
+        }
+        with patch("src.bot.main.get_match_snapshot") as fetch_snapshot, patch(
+            "src.bot.main.get_hero_map",
+            return_value={1: {"display_name": "Anti-Mage", "short_name": "antimage"}},
+        ), patch("src.bot.main.get_item_map", return_value={}), patch(
+            "src.bot.main._preferred_player_name",
+            return_value="Player",
+        ):
+            details = _build_result_details_from_snapshot(
+                {"match_id": 123, "leagueid": 19696},
+                snapshot,
+            )
+
+        self.assertEqual(details["players"][0]["hero_name"], "Anti-Mage")
+        fetch_snapshot.assert_not_called()
 
 
 if __name__ == "__main__":
